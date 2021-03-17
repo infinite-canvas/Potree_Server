@@ -1,0 +1,351 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="description" content="">
+	<meta name="author" content="">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+	<title>Potree Viewer</title>
+
+	<link rel="stylesheet" type="text/css" href="/build/potree/potree.css">
+	<link rel="stylesheet" type="text/css" href="/libs/jquery-ui/jquery-ui.min.css">
+	<link rel="stylesheet" type="text/css" href="/libs/openlayers3/ol.css">
+	<link rel="stylesheet" type="text/css" href="/libs/spectrum/spectrum.css">
+	<link rel="stylesheet" type="text/css" href="/libs/jstree/themes/mixed/style.css">
+	
+
+	<style>
+	
+	#potree_toolbar{
+		position: absolute; 
+		z-index: 10000; 
+		right: 0px; 
+		top: 0px;
+		background: black;
+		color: white;
+		padding: 0.3em 0.8em;
+		font-family: "system-ui";
+		border-radius: 0em 0em 0.3em 0.3em;
+		display: flex;
+	}
+
+	.potree_toolbar_label{
+		text-align: center;
+		font-size: smaller;
+		opacity: 0.9;
+	}
+
+	.potree_toolbar_separator{
+		background: white;
+		padding: 0px;
+		margin: 5px 10px;
+		width: 1px;
+	}
+	
+	</style>
+</head>
+
+<body>
+<script>
+		function redirect(link) {
+			// Redirect to given link
+			window.location.href = link
+		}
+
+		// Check if browser supports template literal syntax (ES6 feature)
+		// If browser is IE11, this should redirect the user to the specified page
+		const REDIRECT = "414_Crete.mp4";
+		var supportsTemplateLiterals;
+		try {
+			eval("`foo`");
+			supportsTemplateLiterals = true;
+		} catch (e) {
+			console.log(e);
+			supportsTemplateLiterals = false;
+		} finally {
+			if (!supportsTemplateLiterals) {
+				// document.getElementById("potree_render_area").innerHTML = "<h1>IE11 and Safari are not supported!</h1>";
+				redirect(REDIRECT);
+			}
+		}
+
+		// Check if browser supports WebGL
+		if (!window.WebGL2RenderingContext) {
+			// Browser does not support WebGL
+			redirect(REDIRECT);
+			// document.getElementById("potree_render_area").innerHTML = "<h1>IE11 and Safari are not supported!</h1>";
+		}
+
+		gl = canvas.getContext("webgl2");
+		if (!gl) {
+			// Browser could not initialize WebGL
+			redirect(REDIRECT);
+		}
+	</script>
+	<script src="/libs/jquery/jquery-3.1.1.min.js"></script>
+	<script src="/libs/spectrum/spectrum.js"></script>
+	<script src="/libs/jquery-ui/jquery-ui.min.js"></script>
+	<script src="/libs/three.js/build/three.min.js"></script>
+	<script src="/libs/three.js/extra/lines.js"></script>
+	<script src="/libs/other/BinaryHeap.js"></script>
+	<script src="/libs/tween/tween.min.js"></script>
+	<script src="/libs/d3/d3.js"></script>
+	<script src="/libs/proj4/proj4.js"></script>
+	<script src="/libs/openlayers3/ol.js"></script>
+	<script src="/libs/i18next/i18next.js"></script>
+	<script src="/libs/jstree/jstree.js"></script>
+	<script src="/build/potree/potree.js"></script>
+	<script src="/libs/plasio/js/laslaz.js"></script>
+
+	<script src='/libs/sql.js/sql-wasm.js'></script>
+	<script src='/libs/geopackage/geopackage.js'></script>
+	<script src="/libs/three.js/extra/lines/LineSegmentsGeometry.js"></script>
+	<script src="/libs/three.js/extra/lines/LineGeometry.js"></script>
+	<script src="/libs/three.js/extra/lines/LineMaterial.js"></script>
+	<script src="/libs/three.js/extra/lines/LineSegments2.js"></script>
+	<script src="/libs/three.js/extra/lines/Line2.js"></script>
+
+	<div class="potree_container" style="position: absolute; width: 100%; height: 100%; left: 0px; top: 0px; ">
+		<div id="potree_render_area">
+			<div id="potree_toolbar"></div>
+		</div>
+		<div id="potree_sidebar_container"> </div>
+	</div>
+
+	<div style="position: absolute; z-index: 10000; right: 0px; bottom: 0px;" 
+		id="fullscreen">
+		<img src="/resources/differ.png" />
+	</div>
+	
+	<div style="position: absolute; z-index: 10000; right: 300px; top: 5px;">
+		<button onclick="toggleAnnotations()">Toggle annotations</button>
+	</div>
+	<script>
+	
+		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
+		
+		viewer.setEDLEnabled(true);
+		viewer.setEDLStrength(0.7);
+		viewer.setEDLRadius(1.3);
+		viewer.setFOV(60);
+		viewer.setPointBudget(4*1000*1000);
+		document.title = "";
+		viewer.setBackground("gradient"); // ["skybox", "gradient", "black", "white"];
+				viewer.setDescription(`Crete, 2013<br>Prof. Tom Levy, Matt Howland, M Vincent - with the support of the Institute for Aegean Prehistory (INSTAP), Greece<br><a href="https://fiona-xd-01.ucsd.edu/image_gallery.cgi?id=414
+" target=_blank">Cavebase gallery 414</a> through <a href="https://fiona-xd-01.ucsd.edu/image_gallery.cgi?id=431
+" target=_blank">431</a> 
+			<p id="pointcloud_title">Area 1</p>
+			
+			<input min="1" max="4" type="range" value="1" id="year" oninput="sliderInput(this.value)">
+		`);
+		viewer.loadSettingsFromURL();
+		
+		viewer.loadGUI(() => {
+			viewer.setLanguage('en');
+			$("#menu_appearance").next().show();
+			$("#menu_tools").next().show();
+			$("#menu_scene").next().show();
+			//viewer.toggleSidebar();
+		});
+		// maps year -> pointcloud reference
+		window.pointcloudMap = {};
+		
+		Potree.loadPointCloud("https://pointcloud.ucsd.edu/Cavebase/pointclouds/414_Crete/Crete_1/metadata.json", " 1, Area ???", e => {
+			let pointcloud = e.pointcloud;
+			window.pointcloudMap['1'] = pointcloud;
+			let material = pointcloud.material;
+			viewer.scene.addPointCloud(pointcloud);
+			material.activeAttributeName = "rgba";
+			material.minSize = 2;
+			material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
+			material.shape = Potree.PointShape.CIRCLE;
+			//e.pointcloud.scale.set(3.3,3.3,3.3);
+			e.pointcloud.position.set (0,0,0);
+			
+			e.pointcloud.visible = true;
+			viewer.fitToScreen();
+			//viewer.scene.view.position.set(221.972, -523.982, 349.439);
+			//viewer.scene.view.lookAt(new THREE.Vector3(159.050, 116.709, 245.710));
+		});		
+		
+			Potree.loadPointCloud("https://pointcloud.ucsd.edu/Cavebase/pointclouds/414_Crete/Crete_2/metadata.json", "2, Late Minoan House C.3 ", e => {
+			let pointcloud = e.pointcloud;
+			window.pointcloudMap['2'] = pointcloud;
+			let material = pointcloud.material;
+			viewer.scene.addPointCloud(pointcloud);
+			material.activeAttributeName = "rgba";
+			material.minSize = 2;
+			material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
+			material.shape = Potree.PointShape.CIRCLE;
+			e.pointcloud.position.set (0,0,0);
+			//e.pointcloud.scale.set(21.45,21.45,21.45);
+			e.pointcloud.visible = false;
+		});			
+			Potree.loadPointCloud("https://pointcloud.ucsd.edu/Cavebase/pointclouds/414_Crete/Crete_3/metadata.json", "3, Papadiokampos House A.1 Area A", e => {
+			let pointcloud = e.pointcloud;
+			window.pointcloudMap['3'] = pointcloud;
+			let material = pointcloud.material;
+			viewer.scene.addPointCloud(pointcloud);
+			material.activeAttributeName = "rgba";
+			material.minSize = 2;
+			material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
+			material.shape = Potree.PointShape.CIRCLE;
+			e.pointcloud.position.set (0,0,0);
+			//e.pointcloud.scale.set(1,1,-1);
+			e.pointcloud.visible = false;
+		});					
+			Potree.loadPointCloud("https://pointcloud.ucsd.edu/Cavebase/pointclouds/414_Crete/Crete_4/metadata.json", "4, (misaligned fllor) Papadiokampos Area B", e => {
+			let pointcloud = e.pointcloud;
+			window.pointcloudMap['4'] = pointcloud;
+			let material = pointcloud.material;
+			viewer.scene.addPointCloud(pointcloud);
+			material.activeAttributeName = "rgba";
+			material.minSize = 2;
+			material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
+			material.shape = Potree.PointShape.CIRCLE;
+			e.pointcloud.position.set (0,0,0);
+			//e.pointcloud.scale.set(3,3,3);
+			e.pointcloud.visible = false;
+		});		   		
+			
+		function toggleAnnotations() {
+			// Loop through all annotations and toggle them on/off
+			viewer.scene.annotations.children.forEach((annotation) => {
+				annotation.visible = !annotation.visible;
+			});
+		}				   
+	</script>
+	<script>
+	
+	// 1: define html of toolbar first 
+	// 2: then populate with content and actions 
+	//
+	// Following files can be used as references on how to add certain functionality to the toolbar:
+	// - sidebar.html
+	// - sidebar.js
+	// - PropertiesPanel.html and its dependencies (DistancePanel, ProfilePanel, ...)
+	// 
+
+	// HTML
+	const elToolbar = $("#potree_toolbar");
+	elToolbar.html(`
+		
+		<span>
+			<div class="potree_toolbar_label">
+				Measure
+			</div>
+			<div>
+				<img name="action_measure_point" src="${Potree.resourcePath}/icons/point.svg" class="annotation-action-icon" style="width: 2em; height: auto;"/>
+				<img name="action_measure_distance" src="${Potree.resourcePath}/icons/distance.svg" class="annotation-action-icon" style="width: 2em; height: auto;"/>
+				<img name="action_measure_height" src="${Potree.resourcePath}/icons/height.svg" class="annotation-action-icon" style="width: 2em; height: auto;"/>
+				<img name="action_reset_tools" src="${Potree.resourcePath}/icons/reset_tools.svg" class="annotation-action-icon" style="width: 2em; height: auto;"/>
+			</div>
+		</span>
+
+		<span class="potree_toolbar_separator" />
+
+		<span>
+			<div class="potree_toolbar_label" style="width: 6em">
+				Material
+			</div>
+			<div>
+				<select id="optMaterial" name="optMaterial"></select>
+			</div>
+		</span>
+
+
+	`);
+
+	// CONTENT & ACTIONS
+
+
+
+	{ // MEASURE
+		elToolbar.find("img[name=action_measure_point]").click( () => {
+			const measurement = viewer.measuringTool.startInsertion({
+				showDistances: false,
+				showAngles: false,
+				showCoordinates: true,
+				showArea: false,
+				closed: true,
+				maxMarkers: 1,
+				name: 'Point'
+			});
+		});
+
+		elToolbar.find("img[name=action_measure_distance]").click( () => {
+			const measurement = viewer.measuringTool.startInsertion({
+				showDistances: true,
+				showArea: false,
+				closed: false,
+				name: 'Distance'
+			});
+		});
+		
+		elToolbar.find("img[name=action_measure_height]").click( () => {
+			const measurement = viewer.measuringTool.startInsertion({
+				showDistances: false,
+				showHeight: true,
+				showArea: false,
+				closed: false,
+				maxMarkers: 2,
+				name: 'Height'
+			});
+		});
+		elToolbar.find("img[name=action_reset_tools]").click( () => {
+				const measurement = this.viewer.scene.removeAllMeasurements();
+		});
+
+	}
+
+	{ // MATERIAL
+		let options = [
+			"rgba", 
+			"color",
+			"elevation",
+			"intensity",
+			
+			//"indices",
+			// "intensity",
+			// "classification",
+			// "source id",
+		];
+
+		let attributeSelection = elToolbar.find('#optMaterial');
+		for(let option of options){
+			let elOption = $(`<option>${option}</option>`);
+			attributeSelection.append(elOption);
+		}
+
+		const updateMaterialSelection = (event, ui) => {
+			let selectedValue = attributeSelection.selectmenu().val();
+
+			for(const pointcloud of viewer.scene.pointclouds){
+				pointcloud.material.activeAttributeName = selectedValue;
+			}
+		};
+
+		attributeSelection.selectmenu({change: updateMaterialSelection});
+	}
+
+		// callback when input slider changes
+		function sliderInput(value) {
+			// update text of title
+			$("#pointcloud_title").text("Crete " + window.pointcloudMap[value].name);
+			
+			// update which pointcloud is visible
+			Object.keys(window.pointcloudMap).forEach((year) => {
+				if (year === value) {
+					window.pointcloudMap[year].visible = true;
+				} else {
+					window.pointcloudMap[year].visible = false;
+				}
+			});
+		}
+
+
+	
+	</script>
+  </body>
+</html>
